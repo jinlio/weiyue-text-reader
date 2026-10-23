@@ -3,7 +3,8 @@
 import json
 import re
 import urllib.parse
-import urllib.request
+
+from safety import safe_read
 
 
 def _split_parts(text, limit=450):
@@ -73,8 +74,10 @@ def _translate_one(part, langpair, timeout):
             q = urllib.parse.quote(part)
             url = ('https://api.mymemory.translated.net/get?q=%s&langpair=%s'
                    % (q, langpair))
-            with urllib.request.urlopen(url, timeout=timeout) as r:
-                data = json.loads(r.read().decode('utf-8', 'ignore'))
+            data = json.loads(safe_read(
+                url, timeout=timeout, max_bytes=1024 * 1024,
+                allowed_hosts=('api.mymemory.translated.net',)).decode(
+                    'utf-8', 'ignore'))
             out = (data.get('responseData') or {}).get('translatedText') or ''
             if out.strip():
                 return out.strip()

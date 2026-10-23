@@ -9,12 +9,16 @@
 早间新闻/早间新闻-YYYY-MM-DD.txt 即可，薇阅同样能读到。
 """
 import html
+import ipaddress
 import os
 import re
+import socket
 import sys
+import tempfile
 import time
+import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 
 WEB_ROOT = os.environ.get('WY_WEB_ROOT', '/var/www/html')
 OUT_DIR = os.path.join(WEB_ROOT, '早间新闻')
@@ -29,13 +33,54 @@ SOURCES = [
     'https://rsshub.app/zhihu/daily',                           # 知乎日报（若可用）
 ]
 
+ALLOWED_HOSTS = frozenset(
+    urllib.parse.urlsplit(u).hostname for u in SOURCES)
+
+
+def _validate_url(url):
+    """只允许 http/https 和 SOURCES 里的公开主机，阻断内网/保留地址。"""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port or (443 if parts.scheme == 'https' else 80)
+    except ValueError as e:
+        raise ValueError('地址格式无效：%s' % e)
+    if parts.scheme not in ('http', 'https'):
+        raise ValueError('仅允许 http/https 地址：%s' % url)
+    host = (parts.hostname or '').rstrip('.').lower()
+    if not host or host not in ALLOWED_HOSTS:
+        raise ValueError('不允许访问的主机：%s' % host)
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as e:
+        raise ValueError('无法解析主机 %s：%s' % (host, e))
+    for info in infos:
+        addr = info[4][0].split('%', 1)[0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            raise ValueError('无法识别的地址：%s' % addr)
+        if not ip.is_global:
+            raise ValueError('拒绝访问本机/内网/保留地址：%s' % ip)
+
+
+class _RedirectGuard(urllib.request.HTTPRedirectHandler):
+    def __init__(self):
+        super().__init__()
+        self.max_redirections = 3
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
 
 def fetch(url):
+    _validate_url(url)
     req = urllib.request.Request(url, headers={
         'User-Agent': 'WeiyueMorningNews/1.0 (+https://github.com/)'
     })
-    with urllib.request.urlopen(req, timeout=READ_TIMEOUT) as r:
-        return r.read()
+    opener = urllib.request.build_opener(_RedirectGuard())
+    with opener.open(req, timeout=READ_TIMEOUT) as r:
+        return r.read(5 * 1024 * 1024)
 
 
 def clean(text):
@@ -86,8 +131,21 @@ def main():
 
     os.makedirs(OUT_DIR, exist_ok=True)
     out = os.path.join(OUT_DIR, '早间新闻-%s.txt' % today)
-    with open(out, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(lines))
+    fd, tmp = tempfile.mkstemp(prefix='.morning_', suffix='.txt', dir=OUT_DIR)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            fd = None
+            f.write('\n'.join(lines))
+        os.replace(tmp, out)
+        tmp = None
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if tmp is not None:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     print('已生成：%s（%d 条）' % (out, len(all_items)))
     return 0
 

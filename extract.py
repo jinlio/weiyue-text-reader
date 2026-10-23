@@ -301,10 +301,10 @@ def extract_mobi(path):
 
 def extract_fb2(path):
     """FB2 电子书（XML）：把正文段落按顺序拼出来。"""
-    import xml.etree.ElementTree as ET
+    from safety import safe_xml_fromstring
 
     raw = read_text_file(path)
-    root = ET.fromstring(raw)
+    root = safe_xml_fromstring(raw)
 
     def local(tag):
         return tag.rsplit('}', 1)[-1]

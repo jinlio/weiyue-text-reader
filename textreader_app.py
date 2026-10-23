@@ -35,6 +35,10 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from extract import extract_text, clean_for_speech, split_chunks
 from speaker import Speaker
 from translate import translate
+import safety
+
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+_CONFIG_PATH = os.path.join(_APP_DIR, 'weiyue_config.json')
 
 # ---------- 多语言界面 ----------
 UI = {
@@ -1820,7 +1824,8 @@ class App:
                 url = base + urllib.parse.quote('/早间新闻/' + name)
                 req = urllib.request.Request(
                     url, headers={'User-Agent': 'Weiyue/3.0'})
-                buf = urllib.request.urlopen(req, timeout=12).read()
+                buf = safety.safe_read(
+                    req, timeout=12, max_bytes=16 * 1024 * 1024)
                 if not buf or not buf.strip():
                     return
                 fd, tmp = tempfile.mkstemp(suffix='.txt',
@@ -1891,7 +1896,7 @@ class App:
                                            b.get('author', ''),
                                            b.get('file', '')))
             raw = '\n'.join(sorted(parts)).encode('utf-8', 'ignore')
-            return hashlib.md5(raw).hexdigest()
+            return hashlib.sha256(raw).hexdigest()
         except Exception:
             return ''
 
@@ -1906,8 +1911,9 @@ class App:
                 req = urllib.request.Request(
                     base + '/books.json',
                     headers={'User-Agent': 'Weiyue/3.0'})
-                data = json.loads(urllib.request.urlopen(
-                    req, timeout=12).read().decode('utf-8'))
+                data = json.loads(safety.safe_read(
+                    req, timeout=12,
+                    max_bytes=8 * 1024 * 1024).decode('utf-8'))
                 sig = self._cloud_books_signature(data)
             except Exception:
                 return
@@ -2045,8 +2051,9 @@ class App:
                     req = urllib.request.Request(
                         base + '/books.json',
                         headers={'User-Agent': 'Weiyue/3.0'})
-                    data = json.loads(urllib.request.urlopen(
-                        req, timeout=15).read().decode('utf-8'))
+                    data = json.loads(safety.safe_read(
+                        req, timeout=15,
+                        max_bytes=8 * 1024 * 1024).decode('utf-8'))
                 except Exception as e:
                     self.root.after(0, lambda: _cloud_fail(str(e)))
                     return
@@ -2155,7 +2162,8 @@ class App:
                 try:
                     req = urllib.request.Request(
                         url, headers={'User-Agent': 'Weiyue/3.0'})
-                    buf = urllib.request.urlopen(req, timeout=30).read()
+                    buf = safety.safe_read(
+                        req, timeout=30, max_bytes=64 * 1024 * 1024)
                     fd, tmp = tempfile.mkstemp(suffix='.txt',
                                                prefix='weiyue_cloud_')
                     with os.fdopen(fd, 'wb') as fh:
@@ -2229,7 +2237,8 @@ class App:
                         url, data=body,
                         headers={'User-Agent': 'Weiyue/3.0',
                                  'Content-Type': 'application/x-www-form-urlencoded'})
-                    r = urllib.request.urlopen(req, timeout=15).read()
+                    r = safety.safe_read(
+                        req, timeout=15, max_bytes=1024 * 1024)
                     r = r.decode('utf-8', 'ignore').strip()
                 except Exception as e:
                     self.root.after(0, lambda: _cloud_fail(str(e)))
@@ -2267,8 +2276,7 @@ class App:
 
         _set_mode('local')
     def _lib_config_path(self):
-        here = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(here, 'weiyue_config.json')
+        return _CONFIG_PATH
 
     def _lib_load_config(self):
         self._pron_dict = []
@@ -2288,8 +2296,13 @@ class App:
             self._lib_last_dir = ''
 
     def _lib_save_config(self):
+        fd = None
+        tmp = None
         try:
-            with open(self._lib_config_path(), 'w', encoding='utf-8') as f:
+            fd, tmp = tempfile.mkstemp(
+                prefix='.weiyue_config_', suffix='.tmp', dir=_APP_DIR)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                fd = None
                 json.dump({
                     'last_library': self._lib_last_dir,
                     'pron_dict': self._pron_dict,
@@ -2299,8 +2312,21 @@ class App:
                     'cloud_del_key': self._cloud_del_key,
                     'cloud_books_sig': self._cloud_books_sig,
                 }, f, ensure_ascii=False)
+            os.replace(tmp, _CONFIG_PATH)
+            tmp = None
         except Exception:
             pass
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
+            if tmp is not None:
+                try:
+                    os.remove(tmp)
+                except Exception:
+                    pass
 
     def _lib_scan(self, root_dir):
         if self._lib_win is None:

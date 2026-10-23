@@ -49,7 +49,8 @@ class FollowReader:
     def _play_ai(self, text, rate, on_duration):
         import asyncio
         import edge_tts
-        mp3 = tempfile.mktemp(suffix='.mp3')
+        fd, mp3 = tempfile.mkstemp(suffix='.mp3')
+        os.close(fd)
         pct = int(round(max(-50, min(100, (rate - 1) * 100))))
         rate_str = '%+d%%' % pct
 
@@ -215,7 +216,8 @@ class FollowReader:
         else:
             data = np.zeros(0, dtype=np.int16)
         secs = len(data) / 16000.0
-        out_path = tempfile.mktemp(suffix='.wav')
+        fd, out_path = tempfile.mkstemp(suffix='.wav')
+        os.close(fd)
         self._save_wav(out_path, data, 16000)
         self._rec_path = out_path
         self._rec_frames = []

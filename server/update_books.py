@@ -114,8 +114,22 @@ def _convert_epubs(lib):
             out_path = os.path.join(lib, out_name + ".txt")
             if os.path.exists(out_path) and os.path.getmtime(out_path) >= os.path.getmtime(p):
                 continue
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(text)
+            fd, tmp = tempfile.mkstemp(
+                prefix=".wy_book_", suffix=".txt", dir=lib)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    fd = None
+                    f.write(text)
+                os.replace(tmp, out_path)
+                tmp = None
+            finally:
+                if fd is not None:
+                    os.close(fd)
+                if tmp is not None:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
             print("已转换: %s -> %s" % (os.path.basename(p), os.path.basename(out_path)))
         except Exception as e:
             print("转换失败: %s (%s)" % (os.path.basename(p), e))
@@ -136,8 +150,23 @@ def _write_books(base, lib):
             "file": "library/" + os.path.basename(p),
             "format": "TXT"
         })
-    with open(os.path.join(base, "books.json"), "w", encoding="utf-8") as f:
-        json.dump(books, f, ensure_ascii=False, indent=2)
+    books_path = os.path.join(base, "books.json")
+    fd, tmp = tempfile.mkstemp(
+        prefix=".wy_books_", suffix=".json", dir=base)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = None
+            json.dump(books, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, books_path)
+        tmp = None
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if tmp is not None:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     print("已生成 books.json，书库共 %d 本。" % len(books))
 
 

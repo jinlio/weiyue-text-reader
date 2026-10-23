@@ -2,6 +2,7 @@
 # 提示：Release 里的便携版自带 Python，无需安装任何依赖。
 
 edge-tts>=6.1.0        # AI 神经网络语音
+defusedxml>=0.7.1      # 安全解析 EPUB/FB2/RSS 等外部 XML
 comtypes>=1.1.14       # Windows SAPI 本地语音 / WMP 播放
 Pillow>=9.0.0          # 托盘图标
 pystray>=0.19.0        # 系统托盘

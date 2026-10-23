@@ -65,7 +65,8 @@ def ocr_image(path, lang='zh-CN'):
                                      Image.LANCZOS)
         else:
             image = image.resize((w * scale, h * scale), Image.LANCZOS)
-        tmp = tempfile.mktemp(suffix='.png')
+        fd, tmp = tempfile.mkstemp(suffix='.png')
+        os.close(fd)
         try:
             image.save(tmp)
             return _ocr_png(tmp, lang)
